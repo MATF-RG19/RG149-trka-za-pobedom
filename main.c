@@ -1,5 +1,8 @@
 #include <GL/glut.h>
 #include<stdlib.h>
+#include<time.h>
+
+#define TIMER 0
 
 static int window_width, window_height;
 
@@ -7,7 +10,26 @@ static void on_display(void);
 static void on_reshape(int width, int height);
 static void on_keyboard(unsigned char key, int x, int y);
 
+static int start,end;
+
+static int timer_active;
+
+static float x_plane1=3;
+static float y_plane1=0;
+static float z_plane1=10;
+
+static float x_coord =3;
+static float y_coord =1;
+static float z_coord =0;
+
+static int possible_moves[] = {0,0};
+
+static void move_planes(int value);
+
+
 int main(int argc, char **argv) {
+
+      srand(time(NULL));
 
       glutInit(&argc, argv);
       glutInitDisplayMode( GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
@@ -21,6 +43,7 @@ int main(int argc, char **argv) {
       glutKeyboardFunc(on_keyboard);
 
       glClearColor(0.7,0.2,0.2,0);
+      glEnable(GL_DEPTH_TEST);
 
       glLineWidth(1.5);
 
@@ -31,9 +54,36 @@ int main(int argc, char **argv) {
 
 static void on_keyboard(unsigned char key, int x, int y){
   switch(key){
-    case 97:
-     exit(0);
-     break;
+    case 27:
+        exit(0);
+         break;
+    case 'S':
+    case 's':
+         start=1;
+         if(!end)
+         {
+             if(!timer_active){
+               glutTimerFunc(50,move_planes,timer_active);
+               timer_active=1;
+             }
+         };
+         break;
+    case 'P':
+    case 'p':
+         timer_active=0;
+         break;
+    case 'A':
+    case 'a':
+         start=1;
+         possible_moves[0]=1;
+         glutPostRedisplay();
+         break;
+    case 'D':
+    case 'd':
+         start=1;
+         possible_moves[1]=1;
+         glutPostRedisplay();
+         break;
   }
 }
 
@@ -55,26 +105,51 @@ static void on_display(void){
   //Podesavavamo tacku pogleda
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
-  gluLookAt( 2,2,2,
-             0,0,0,
-             0,1,0 );
+  gluLookAt( x_coord, y_coord+5, z_coord-7,
+             x_coord, y_coord, z_coord + 5,
+              0.0, 1.0, 0.0);
+  //Iscrtavamo glavnu ravan
+  glPushMatrix();
+  glBegin(GL_QUAD_STRIP);
+  glNormal3f(0,1,0);
+  for (int i = 0; i <= 35; i += 7)
+  {
+      glColor3f(0.2, 0.2, 0.2);
+      glVertex3f(0, 0.51, z_plane1 - 15 + i);
+      glVertex3f(6, 0.51, z_plane1 - 15 + i);
+  }
+  glEnd();
 
-glBegin(GL_LINES);
-  //X-osa
-  glColor3f(0,1,0);
-  glVertex3f(0,0,0);
-  glVertex3f(7,0,0);
 
-  //Y-osa
-  glColor3f(0,1,0);
-  glVertex3f(0,0,0);
-  glVertex3f(0,7,0);
+  glTranslatef(x_plane1,y_plane1,z_plane1);
+  glScalef(6,1,30);
+  glutSolidCube(1);
+  glPopMatrix();
 
-  //Z-osa
-  glColor3f(0,1,0);
-  glVertex3f(0,0,0);
-  glVertex3f(0,0,7);
-glEnd();
 
- glutSwapBuffers();
+  glPushMatrix();
+  glTranslatef(x_coord,y_coord + 1.5, z_coord - 3.5);
+  glColor3f(0,0,1);
+  glutSolidSphere(0.2,20,20);
+  glPopMatrix();
+
+  glutSwapBuffers();
+}
+
+static void move_planes(int value){
+
+  if(value)
+    return;
+  if(possible_moves[0] && x_coord < 5.5){
+    x_coord += 0.1;
+  }
+  if(possible_moves[1] && x_coord > 1.5){
+    x_coord -= 0.1;
+  }
+  z_plane1 -= 0.25;
+
+  glutPostRedisplay();
+  if(timer_active){
+    glutTimerFunc(30,move_planes,0);
+  }
 }
