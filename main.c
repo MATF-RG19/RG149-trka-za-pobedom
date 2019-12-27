@@ -2,10 +2,13 @@
 #include<stdlib.h>
 #include<time.h>
 
+//ubacujem tip u strukturu prepreke
+// 0 oznacava dijamant a 1 kocku
 typedef struct{
   float x;
   float y;
   float z;
+  int type;
 }Obstacle;
 
 Obstacle obstacles1[50];
@@ -21,6 +24,8 @@ static void on_keyboard(unsigned char key, int x, int y);
 
 static int start=0;
 static int end=0;
+
+static float speed=0.5;
 
 static float x_plane1=10;
 static float y_plane1=1;
@@ -49,6 +54,7 @@ static void draw_main_object();
 static void draw_obstacles(int type);
 static void move_objects();
 static void set_obstacles(int type);
+static void set_first();
 
 
 
@@ -129,9 +135,13 @@ static void on_display(void){
 
   draw_plane();
   draw_main_object();
-
-  if(!start)
-    set_obstacles(1);
+//funkcijom set_first smo postavili prepreke na deo ravni koji
+//se ne vidi pri pokretanju programa a kasnije se postale prepreke
+//dodaju u tajmeru
+  if(!start){
+    set_first();
+    set_obstacles(2);
+  }
 
   draw_obstacles(1);
   draw_obstacles(2);
@@ -226,24 +236,30 @@ static void move_objects(int value){
 
   if(value != 0)
     return;
-
-  z_plane1 -=0.5;
-  z_plane2 -= 0.5;
+//Sredjujem bag koji se javlja a to je razmak
+//izmedju 2 ravni. Kada jedna izadje iz vidokruga
+//kamere vracamo je na kraj druge ravni i ponovo
+//postavljamo prepreke
+  z_plane1 -=speed;
+  z_plane2 -=speed;
 
   for (int i = 0; i < pos1; i++)
-        obstacles1[i].z -= 0.5;
+        obstacles1[i].z -= speed;
 
   for (int i = 0; i < pos2; i++)
-        obstacles2[i].z -= 0.5;
-  if(z_plane1+50 < 0){
-    z_plane1 = 200;
+        obstacles2[i].z -= speed;
+
+  if(z_plane1+50 <= 0){
+    z_plane1 = 150;
+    speed +=0.05;
     set_obstacles(1);
   }
-  if(z_plane2+50<0){
-    z_plane2 = 200;
+  if(z_plane2+50<=0){
+    z_plane2 = 150;
+    speed +=0.05;
     set_obstacles(2);
   }
-
+//Kugla se rotira sve vreme
   rotate_object +=30;
   if(rotate_object >= 360)
     rotate_object -=360;
@@ -263,6 +279,7 @@ static void draw_obstacles(int type){
 
   for(int j=0; j<i; j++){
     Obstacle o;
+
     if(type==1)
      o=obstacles1[j];
     else
@@ -279,14 +296,22 @@ static void draw_obstacles(int type){
      glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
      glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
+     if( o.type==0){
      glPushMatrix();
      glTranslatef(o.x, o.y, o.z);
-     glScalef(2,2,2);
-     glutSolidCube(1);
+     glScalef(0.8,0.8,0.8);
+     glutSolidIcosahedron();
      glPopMatrix();
-  }
+     }
+     else if(o.type==1){
+       glPushMatrix();
+       glTranslatef(o.x,o.y,o.z);
+       glScalef(2,2,2);
+       glutSolidCube(1);
+       glPopMatrix();
+     }
+   }
 }
-
 
 static void set_obstacles(int type) {
 
@@ -297,6 +322,11 @@ static void set_obstacles(int type) {
 
   for(int i=0; i<=9;i++){
     int num = (int)rand() % 5;
+
+    if( num==0)
+       num=2;
+    int diamond=0;
+
     for(int j=0; j<num; j++){
       Obstacle o;
       int free_positions[]={0,0,0,0,0};
@@ -304,18 +334,63 @@ static void set_obstacles(int type) {
       int pos = (int)rand() % 5 ;
 
       if(free_positions[pos]==0){
-        o.x = positions[pos];
-        o.y = 0.5;
-        if(type == 1){
-          o.z = z_plane1-100+i*20;
+        free_positions[pos] = 1;
+        int t = (int)rand()%2;
+        if(t==0 && !diamond){
+          o.type=0;
+          o.y=0.5;
+          diamond=1;
+        }
+        else{
+          o.type=1;
+          o.y=0.5;
+        }
+        o.x=positions[pos];
+
+        if(type==1){
+          o.z = z_plane1+50-i*10;
           obstacles1[pos1++] = o;
         }
         else{
-          o.z = z_plane2-100+i*20;
+          o.z = z_plane2+50-i*10;
           obstacles2[pos2++] = o;
         }
       }
     }
 
+  }
+}
+
+static void set_first(){
+
+  for(int i=0;i<2;i++){
+    int num = (int)rand()%5;
+    if(num<4)
+      num++;
+    int diamond=0;
+    for(int j=0;j<num;j++){
+      Obstacle o;
+      int free_positions[] = {0, 0, 0, 0, 0};
+      int positions[] = {4, 2, 0, -2, -4};
+      int pos = (int)rand() % 5;
+
+      if(free_positions[pos] == 0){
+        free_positions[pos]=1;
+        int t=(int)rand()%2;
+        if(t==0 && !diamond){
+          o.type=0;
+          o.y=0.5;
+          diamond=1;
+        }
+        else{
+          o.type=1;
+          o.y=0.5;
+        }
+        o.x=positions[pos];
+        o.z=z_plane1+50-i*20;
+        obstacles1[pos1++]=o;
+      }
+
+    }
   }
 }
