@@ -1,6 +1,21 @@
 #include <GL/glut.h>
 #include<stdlib.h>
 #include<time.h>
+#include<math.h>
+#include "image.h"
+
+#define PI 3.14
+
+//Imena fajlova sa teksturama
+#define FILENAME0 "pesak.bmp"
+#define FILENAME1 "milica.bmp"
+
+//Identifikatori tekstura
+static GLuint names[2];
+
+//niz koji cuva y koordinate pri skoku loptice
+static float jump_positions[180];
+static float speed = 0.45;
 
 //ubacujem tip u strukturu prepreke
 // 0 oznacava dijamant a 1 kocku
@@ -16,17 +31,19 @@ Obstacle obstacles2[50];
 static int pos1;
 static int pos2;
 
-static int window_width, window_height;
-
 static void on_display(void);
 static void on_reshape(int width, int height);
 static void on_keyboard(unsigned char key, int x, int y);
+static void on_release(unsigned char key, int x, int y);
 
+//indikatori za pocetak i kraj igre
 static int start=0;
 static int end=0;
 
-static float speed=0.5;
 
+static int score=0;
+
+//dimenzije staze
 static float x_plane1=10;
 static float y_plane1=1;
 static float z_plane1=50;
@@ -34,14 +51,25 @@ static float x_plane2=10;
 static float y_plane2=1;
 static float z_plane2=150;
 
+//koordinate glavnog objekta
 static float x_coord =0;
-static float y_coord =0;
+static float y_coord =0.75;
 static float z_coord =5;
 static float r=1;
 float rotate_object=0;
 
+//duzina staze
 static float lenght = 100;
 
+static float width = 30;
+
+static float z_coord_left_first = 50;
+static float z_coord_right_first = 50;
+static float z_coord_left_second = 150;
+static float z_coord_right_second = 150;
+
+
+static int possible_moves[]={0,0};
 
 
 static void initialize(int argc, char** argv);
@@ -55,7 +83,7 @@ static void draw_obstacles(int type);
 static void move_objects();
 static void set_obstacles(int type);
 static void set_first();
-
+static void resolve_collision();
 
 
 int main(int argc, char **argv) {
@@ -70,17 +98,64 @@ static void initialize(int argc, char** argv){
   glutInit(&argc, argv);
   glutInitDisplayMode( GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
 
+  //Kreira se  prozor
   glutInitWindowSize(600,600);
   glutInitWindowPosition(100,100);
   glutCreateWindow("Trka za pobedom");
 
+  int k = 0;
+  for (float i = 0; i <= 18; i += 0.1)
+      jump_positions[k++] = 2 * sin(i);
+
+  Image *image;
+  //Ukljucujem teksture
+  glEnable(GL_TEXTURE_2D);
+  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+
+  //Inicijalizuje se objekat koji ce sadrzati teksture ucitane iz fajla
+  image = image_init(0,0);
+
+
+  //Kreira se prva tekstura
+  image_read(image, FILENAME0);
+
+  //Generisu se identifikatori tekstura
+  glGenTextures(2, names);
+
+  glBindTexture(GL_TEXTURE_2D, names[0]);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image->width , image->height, 0,
+               GL_RGB, GL_UNSIGNED_BYTE, image->pixels);
+
+  //Kreira se druga tekstura
+  image_read(image, FILENAME1);
+  glBindTexture(GL_TEXTURE_2D, names[1]);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image->width, image->height, 0,
+               GL_RGB, GL_UNSIGNED_BYTE, image->pixels);
+
+  //Iskljucujemo aktivnu teksturu
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  //Unistava se objekat za citanje tekstura iz fajla
+  image_done(image);
+
+  //Registruju se callback funkcije
   glutDisplayFunc(on_display);
   glutReshapeFunc(on_reshape);
   glutKeyboardFunc(on_keyboard);
+  glutKeyboardUpFunc(on_release);
 
   srand(time(NULL));
 
-  glClearColor(0.7,0.2,0.2,0);
+  //Inicijalizacija OpenGL-a
+  glClearColor(1.0,0.5,0.0,0);
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
 
@@ -88,10 +163,12 @@ static void initialize(int argc, char** argv){
 static void on_keyboard(unsigned char key, int x, int y){
   switch(key){
     case 27:
+        //zavrsavamo igru
         exit(0);
          break;
     case 'S':
     case 's':
+       //pocinjemo igru
        if(!start && !end){
          glutTimerFunc(50,move_objects,0);
          start=1;
@@ -99,31 +176,46 @@ static void on_keyboard(unsigned char key, int x, int y){
          break;
     case 'P':
     case 'p':
+         //pauziramo igru
          start=0;
          break;
     case 'A':
     case 'a':
-         x_coord+=1;
+         //pomeranje ulevo
+         possible_moves[0]=1;
          glutPostRedisplay();
          break;
     case 'D':
     case 'd':
-         x_coord-=1;
+         //pomeranje udesno
+         possible_moves[1]=1;
          glutPostRedisplay();
          break;
   }
 }
 
 static void on_reshape(int width, int height){
-  window_width = width;
-  window_height = height;
 
-  glViewport( 0,0, window_width, window_height);
+
+  glViewport( 0,0, width, height);
 
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  gluPerspective(60, window_width/(float)window_height,1,100);
+  gluPerspective(60, width/(float)height,1,50);
 
+}
+
+static void on_release(unsigned char key, int x, int y){
+  switch(key){
+    case 'a':
+    case 'A':
+       possible_moves[0]-=1;
+       break;
+    case 'd':
+    case 'D':
+       possible_moves[1]-=1;
+       break;
+  }
 }
 
 static void on_display(void){
@@ -135,14 +227,14 @@ static void on_display(void){
 
   draw_plane();
   draw_main_object();
-//funkcijom set_first smo postavili prepreke na deo ravni koji
-//se ne vidi pri pokretanju programa a kasnije se postale prepreke
+//funkcijom set_first() smo postavili prepreke na deo ravni koji
+//se ne vidi pri pokretanju programa a kasnije se ostale prepreke
 //dodaju u tajmeru
   if(!start){
     set_first();
     set_obstacles(2);
   }
-
+  //crtamo prepreke
   draw_obstacles(1);
   draw_obstacles(2);
 
@@ -194,79 +286,244 @@ static void draw_main_object(){
 
 static void draw_plane(){
 
-    GLfloat material_ambient[] = {0.0, 0.0, 0.0, 1.0};
-    GLfloat material_diffuse[] = {0.1, 0.35, 0.9, 1.0};
-    GLfloat material_specular[] = {0.45, 0.55, 0.45, 1.0};
-    GLfloat material_emission[] = {0, 0, 0, 0};
-    GLfloat shininess = 0.25;
-
-    glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
-    glMaterialfv(GL_FRONT, GL_EMISSION, material_emission);
-    glMaterialf(GL_FRONT, GL_SHININESS, shininess);
-
+    //prva ravan
     glPushMatrix();
-    glTranslatef(0, -y_plane1 / 2, z_plane1 );
-    glScalef(x_plane1, -y_plane1 / 2, lenght);
+    glBindTexture(GL_TEXTURE_2D, names[0]);
+    glEnable(GL_TEXTURE_2D);
+
+    glBegin(GL_QUAD_STRIP);
+    glNormal3f(0,1,0);
+    int first=0;
+    int second=0;
+    for(int i=0;i<=5; i++){
+
+      glTexCoord2f(first, second);
+      first = (first + 1) % 2;
+      glVertex3f(-5, -0.2, z_plane1 - 50 + i * 20);
+
+      glTexCoord2f(first, second);
+      first = (first + 1) % 2;
+      second = (second +1) % 2;
+      glVertex3f(5, -0.2, z_plane1 - 50 + i * 20);
+    }
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glTranslatef(0, -y_plane1/2, z_plane1);
+    glScalef(x_plane1, y_plane1/2, lenght);
     glutSolidCube(1);
     glPopMatrix();
 
-
-    GLfloat material_ambient1[] = {0.0, 0.0, 0.0, 1.0};
-    GLfloat material_diffuse1[] = {0.1, 0.35, 0.1, 1.0};
-    GLfloat material_specular1[] = {0.45, 0.55, 0.45, 1.0};
-    GLfloat material_emission1[] = {0, 0, 0, 0};
-    GLfloat shininess1 = 0.25;
-
-    glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient1);
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse1);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular1);
-    glMaterialfv(GL_FRONT, GL_EMISSION, material_emission1);
-    glMaterialf(GL_FRONT, GL_SHININESS, shininess1);
-
+    //druga ravan
     glPushMatrix();
-    glTranslatef(0, -y_plane2 / 2, z_plane2 );
-    glScalef(x_plane2, -y_plane2 / 2, lenght);
+    glBindTexture(GL_TEXTURE_2D, names[0]);
+    glEnable(GL_TEXTURE_2D);
+    glBegin(GL_QUAD_STRIP);
+    glNormal3f(0, 1, 0);
+    first = 0;
+    second = 0;
+    for (int i = 0; i <= 5; i++)
+    {
+        glTexCoord2f(first, second);
+        first = (first + 1) % 2;
+        glVertex3f(-5, -0.2, z_plane2 - 50 + i * 20);
+
+        glTexCoord2f(first, second);
+        first = (first + 1) % 2;
+        second = (second + 1) % 2;
+        glVertex3f(5, -0.2, z_plane2 - 50 + i * 20);
+    }
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glTranslatef(0, -y_plane2 / 2, z_plane2);
+    glScalef(x_plane2, y_plane2 / 2, lenght);
     glutSolidCube(1);
     glPopMatrix();
+
+    //prva ravan desno od glavne
+    glPushMatrix();
+    glBindTexture(GL_TEXTURE_2D, names[1]);
+    glEnable(GL_TEXTURE_2D);
+
+    glBegin(GL_QUAD_STRIP);
+    glNormal3f(0, 1, 0);
+   first = 0;
+   second = 0;
+   for (int i = 0; i <= 5; i++)
+   {
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       glVertex3f(-5, -0.2, z_coord_right_first - 50 + i * 20);
+
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       second = (second + 1) % 2;
+       glVertex3f(-35, -0.2, z_coord_right_first - 50 + i * 20);
+   }
+
+   glEnd();
+
+   glDisable(GL_TEXTURE_2D);
+   glBindTexture(GL_TEXTURE_2D, 0);
+   glTranslatef(-20, -y_plane1 / 2, z_coord_right_first);
+   glScalef(width, y_plane1 / 2, lenght);
+   glutSolidCube(1);
+   glPopMatrix();
+
+   //druga ravan desno od glavne
+   glPushMatrix();
+    glBindTexture(GL_TEXTURE_2D, names[1]);
+    glEnable(GL_TEXTURE_2D);
+
+    glBegin(GL_QUAD_STRIP);
+    glNormal3f(0, 1, 0);
+    first = 0;
+    second = 0;
+    for (int i = 0; i <= 5; i++)
+    {
+        glTexCoord2f(first, second);
+        first = (first + 1) % 2;
+        glVertex3f(-5, -0.2, z_coord_right_second - 50 + i * 20);
+
+        glTexCoord2f(first, second);
+        first = (first + 1) % 2;
+        second = (second + 1) % 2;
+        glVertex3f(-35, -0.2, z_coord_right_second - 50 + i * 20);
+    }
+
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glTranslatef(-20, -y_plane1 / 2, z_coord_right_second);
+    glScalef(width, y_plane1 / 2, lenght);
+    glutSolidCube(1);
+    glPopMatrix();
+
+    //prva ravan levo od glavne
+    glPushMatrix();
+   glBindTexture(GL_TEXTURE_2D, names[1]);
+   glEnable(GL_TEXTURE_2D);
+
+   glBegin(GL_QUAD_STRIP);
+   glNormal3f(0, 1, 0);
+   first = 0;
+   second = 0;
+   for (int i = 0; i <= 5; i++)
+   {
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       glVertex3f(5, -0.2, z_coord_left_first - 50 + i * 20);
+
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       second = (second + 1) % 2;
+       glVertex3f(35, -0.2, z_coord_left_first - 50 + i * 20);
+   }
+
+   glEnd();
+
+   glDisable(GL_TEXTURE_2D);
+   glBindTexture(GL_TEXTURE_2D, 0);
+   glTranslatef(20, -y_plane1 / 2, z_coord_left_first);
+   glScalef(width, y_plane1 / 2, lenght);
+   glutSolidCube(1);
+   glPopMatrix();
+
+   //druga ravan levo od glavne
+   glPushMatrix();
+   glBindTexture(GL_TEXTURE_2D, names[1]);
+   glEnable(GL_TEXTURE_2D);
+
+   glBegin(GL_QUAD_STRIP);
+   glNormal3f(0, 1, 0);
+   first = 0;
+   second = 0;
+   for (int i = 0; i <= 5; i++)
+   {
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       glVertex3f(5, -0.2, z_coord_left_second - 50 + i * 20);
+
+       glTexCoord2f(first, second);
+       first = (first + 1) % 2;
+       second = (second + 1) % 2;
+       glVertex3f(35, -0.2, z_coord_left_second - 50 + i * 20);
+   }
+
+   glEnd();
+
+   glDisable(GL_TEXTURE_2D);
+   glBindTexture(GL_TEXTURE_2D, 0);
+   glTranslatef(20, -y_plane1 / 2, z_coord_left_second);
+   glScalef(width, y_plane1 / 2, lenght);
+   glutSolidCube(1);
+   glPopMatrix();
+
 }
 
 static void move_objects(int value){
+    if (value != 0)
+        return;
 
-  if(value != 0)
-    return;
-//Sredjujem bag koji se javlja a to je razmak
-//izmedju 2 ravni. Kada jedna izadje iz vidokruga
-//kamere vracamo je na kraj druge ravni i ponovo
-//postavljamo prepreke
-  z_plane1 -=speed;
-  z_plane2 -=speed;
+    z_plane1 -= speed;
+    z_plane2 -= speed;
+    z_coord_left_first -= speed;
+    z_coord_left_second -= speed;
+    z_coord_right_first -= speed;
+    z_coord_right_second -= speed;
 
-  for (int i = 0; i < pos1; i++)
+    for (int i = 0; i < pos1; i++)
         obstacles1[i].z -= speed;
 
-  for (int i = 0; i < pos2; i++)
+    for (int i = 0; i < pos2; i++)
         obstacles2[i].z -= speed;
 
-  if(z_plane1+50 <= 0){
-    z_plane1 = 150;
-    speed +=0.05;
-    set_obstacles(1);
-  }
-  if(z_plane2+50<=0){
-    z_plane2 = 150;
-    speed +=0.05;
-    set_obstacles(2);
-  }
-//Kugla se rotira sve vreme
-  rotate_object +=30;
-  if(rotate_object >= 360)
-    rotate_object -=360;
+    if (possible_moves[0] && x_coord < 4.5)
+        x_coord += 0.2;
 
-  glutPostRedisplay();
-  if(start && !end)
-    glutTimerFunc(50, move_objects,0);
+    if (possible_moves[1] && x_coord > -4.5)
+        x_coord -= 0.2;
+
+
+    //Sredjujem bag koji se javlja a to je razmak izmedju 2 ravni.
+   //Kada jedna izadje iz vidokruga kamere vracamo je na kraj druge ravni
+   //i ponovo postavljamo prepreke
+    if (z_plane1 + 50 <= 0){
+        z_plane1 = 150;
+        set_obstacles(1);
+    }
+    if (z_plane2 + 50 <= 0){
+        z_plane2 = 150;
+        set_obstacles(2);
+    }
+
+    if (z_coord_left_first + 50 <= 0){
+        z_coord_left_first = 150;
+    }
+    if (z_coord_left_second + 50 <= 0){
+        z_coord_left_second = 150;
+    }
+
+    if (z_coord_right_first + 50 <= 0){
+        z_coord_right_first = 150;
+    }
+    if (z_coord_right_second + 50 <= 0){
+        z_coord_right_second = 150;
+    }
+
+    // Kugla se rotira sve vreme
+    rotate_object += 30;
+    if (rotate_object >= 360)
+        rotate_object += -360;
+
+    resolve_collision();
+
+    glutPostRedisplay();
+    if (start && !end)
+        glutTimerFunc(50, move_objects, 0);
 }
 
 static void draw_obstacles(int type){
@@ -296,6 +553,7 @@ static void draw_obstacles(int type){
      glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
      glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
+     //Ako je tip prepreke 0 crtamo dijamant
      if( o.type==0){
      glPushMatrix();
      glTranslatef(o.x, o.y, o.z);
@@ -303,6 +561,7 @@ static void draw_obstacles(int type){
      glutSolidIcosahedron();
      glPopMatrix();
      }
+     //Ako je tip prepreke 1 crtamo kocku
      else if(o.type==1){
        glPushMatrix();
        glTranslatef(o.x,o.y,o.z);
@@ -326,10 +585,10 @@ static void set_obstacles(int type) {
     if( num==0)
        num=2;
     int diamond=0;
+    int free_positions[]={0,0,0,0,0};
 
     for(int j=0; j<num; j++){
       Obstacle o;
-      int free_positions[]={0,0,0,0,0};
       int positions[]={0,2,4,-2,-4};
       int pos = (int)rand() % 5 ;
 
@@ -393,4 +652,52 @@ static void set_first(){
 
     }
   }
+}
+
+static void resolve_collision()
+{
+    if (z_plane1 < z_plane2)
+    {
+        for (int i = 0; i < pos1; i++)
+        {
+            Obstacle o = obstacles1[i];
+            float x = powf((o.x - x_coord), 2);
+          //  float y = powf((o.y - y_coord), 2);
+            float z = powf((o.z - z_coord - 1.5), 2);
+            if (x < 4 && z < 4)
+            {
+                if (obstacles1[i].type == 0)
+                {
+                    score++;
+                }
+                else if (obstacles1[i].type == 1)
+                {
+                    start = 0;
+                }
+                else
+                    start = 0;
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < pos2; i++)
+        {
+            Obstacle o = obstacles2[i];
+            float x = powf((o.x - x_coord), 2);
+          //  float y = powf((o.y - y_coord), 2);
+            float z = powf((o.z - z_coord - 1.5), 2);
+            if (x < 4 && z < 4)
+            {
+                if (obstacles2[i].type == 0){
+                    score++;
+                }
+                else if (obstacles2[i].type == 1){
+                    start = 0;
+                }
+                else
+                    start = 0;
+            }
+        }
+    }
 }
