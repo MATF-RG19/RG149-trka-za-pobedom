@@ -1,0 +1,3 @@
+Napomena:
+
+Slike start.bmp i winner.bmp su kompresovane i tako ubacene jer su zauzimale preko 25mb.
