@@ -10,9 +10,10 @@ ___
 ___
 ### :unlock: Pokretanje:
 * Preuzmite repozitorijum pomoću komande:  ``` git clone https://github.com/MATF-RG19/RG149-trka-za-pobedom ``` <br>
-* Pozicionirajte se u direktorijum `RG149-trka-za-pobedom/projekat` <br>
+* Pozicionirajte se u direktorijum `RG149-trka-za-pobedom` <br>
+* Raspakujte foldere `start.bmp.tar.gz` i `winner.bmp.tar.gz`
 * Pokrenite Makefile komandom `make` <br>
-* Pokrenite igricu komandom `./projekat`
+* Pokrenite igricu komandom `./proba`
 
 ___
 
